@@ -1,0 +1,11 @@
+kernel void init(
+	global int * restrict a,
+	global int * restrict b,
+	int numels;
+{
+	int i = get_global_id(0);
+	if (i >= numels)
+		return;
+	a[i] = i;
+	b[i] = numels - i;
+}
