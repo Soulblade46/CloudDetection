@@ -1,159 +1,240 @@
-#include <ocl_boiler.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <hdf5.h>
+#include <stdbool.h>
+#include "printh5.c"
+//#include "tests.c"
+#include "hrv.c"
+#include <math.h>
 
-int main()
+#define L15_PATH "U-MARF/MSG/Level1.5/"
+
+int *mask1A,*mask1B,*mask1C,*mask2A,*mask3C,*mask4A,*mask4B,*mask4C,*mask4D,*mask4F,*mask5B,*mask5F;
+
+#define NUM_CHANNEL 9
+
+char *ChannelPath[] = {
+    L15_PATH "DATA/Channel 01/IMAGE_DATA",
+    L15_PATH "DATA/Channel 02/IMAGE_DATA",
+    L15_PATH "DATA/Channel 03/IMAGE_DATA",
+    L15_PATH "DATA/Channel 04/IMAGE_DATA",
+    L15_PATH "DATA/Channel 05/IMAGE_DATA",
+    L15_PATH "DATA/Channel 06/IMAGE_DATA",
+    L15_PATH "DATA/Channel 07/IMAGE_DATA",
+    L15_PATH "DATA/Channel 09/IMAGE_DATA",
+    L15_PATH "DATA/Channel 11/IMAGE_DATA",
+};
+
+int num[NUM_CHANNEL]={1,2,3,4,5,6,7,9,11};
+
+#define META_PATH L15_PATH "METADATA/"
+#define HEADER_PATH META_PATH "HEADER/"
+
+char * AttributePath   = HEADER_PATH "RadiometricProcessing/Level15ImageCalibration_ARRAY";
+char * DescriptionPath = HEADER_PATH "ImageDescription/ImageDescription_DESCR";
+char * SubsetPath = META_PATH "SUBSET";
+
+struct calibration
 {
-	rcl_int err;
+    double slope;
+    double offset;
+};
 
-	cl_int numels;
-	size_t lws = 0;
+struct KeyValue
+{
+    char name[80];
+    char value[80];
+};
 
-	if (getenv("VECSIZE")) {
-		vecsize = atoi(getenv("VECSIZE"));
-	} else {
-		vecsize = 4;
-	}
+char* fname ="img-mezzogiorno.h5";
+hid_t  fid;
 
-	if (argc > 1) {
-		numels = atoi(argv[1]);
-	} else {
-		fprintf(stderr, "inserire numero di elementi\n");
-		exit(1);
-	}
+#define DIM 3712
 
-	// vettorializzazione: assicuriamoci che sia multiplo del
-	// numero di elementi nel vettore
-	numels = round_mul_up(numels, 4);
+unsigned short* data[NUM_CHANNEL];
+//unsigned short (*data)[DIM] [NUM_CHANNEL];
+double* data_true[NUM_CHANNEL];
+struct calibration *cal;
+bool* mask[NUM_CHANNEL];
+bool* final_mask;
 
-	if (argc > 2) {
-		lws = atoi(argv[2]);
-	}
+void read_data()
+{
+    hid_t dataset, dataspace,dataset_img, dataspace_img;
+    hssize_t num_entries;
+    herr_t status;
+    //struct calibration *cal;
+    struct KeyValue *keys;
+    //unsigned short (*data)[DIM] = malloc(sizeof(unsigned short[DIM][DIM]));
 
-	char compile_opt[BUFSIZE];
-	snprintf(compile_opt, BUFSIZE, "-DVECTYPE=int%zu", vecsize);
+    hid_t h5cal_t = H5Tcreate(H5T_COMPOUND, sizeof(struct calibration));
+    H5Tinsert(h5cal_t, "Cal_Slope", HOFFSET(struct calibration, slope),
+            H5T_NATIVE_DOUBLE);
+    H5Tinsert(h5cal_t, "Cal_Offset",
+            HOFFSET(struct calibration, offset),
+            H5T_NATIVE_DOUBLE);
+ 
+    fid = H5Fopen(fname , H5F_ACC_RDONLY , H5P_DEFAULT );
+    dataset = H5Dopen2(fid, AttributePath, H5P_DEFAULT);    
+    dataspace = H5Dget_space(dataset);
+    H5Sget_simple_extent_ndims(dataspace);
+    num_entries = H5Sget_simple_extent_npoints(dataspace);
+    cal=(struct calibration*)malloc(sizeof(struct calibration)*num_entries);
+    status = H5Dread(dataset, h5cal_t, H5S_ALL, dataspace, H5P_DEFAULT, cal);   
+    H5Dclose(dataset);
+    /////////////////////////////////////////////////////////////////////////////////////////
+    hid_t h5keyval_t = H5Tcreate(H5T_COMPOUND, sizeof(struct KeyValue));
+    hid_t h5c80_t = H5Tcreate(H5T_STRING, 80);
 
-	cl_platform_id piattaforma = select_platform();
-	cl_device_id device = select_device(piattaforma);
-	cl_context ctx = create_context(piattaforma, device);
-	cl_command_queue que = create_queue(ctx, device);
-	cl_program devcode = create_program(
-		"vecsum.ocl", compile_opt,
-		ctx, device);
-	cl_mem a, b, c;
-	size_t numbytes = numels*sizeof(cl_int);
-	a = clCreateBuffer(ctx,
-		CL_MEM_READ_WRITE,
-		numbytes, NULL,
-		&err);
-	ocl_check(err, "create a");
-	b = clCreateBuffer(ctx,
-		CL_MEM_READ_WRITE,
-		numbytes, NULL,
-		&err);
-	ocl_check(err, "create b");
-	c = clCreateBuffer(ctx,
-		CL_MEM_WRITE_ONLY | CL_MEM_ALLOC_HOST_PTR,
-		numbytes, NULL,
-		&err);
-	ocl_check(err, "create c");
+    H5Tinsert(h5keyval_t, "EntryName", HOFFSET(struct KeyValue, name), h5c80_t);
+    H5Tinsert(h5keyval_t, "Value", HOFFSET(struct KeyValue, value), h5c80_t);
 
-	cl_kernel init_k = clCreateKernel(devcode, "init", &err);
-	ocl_check(err, "create init");
+    for (int i=0;i<NUM_CHANNEL;++i)
+    {
+        dataset_img = H5Dopen2(fid, ChannelPath[i], H5P_DEFAULT);    
+        dataspace_img = H5Dget_space(dataset_img);
 
-	cl_kernel sum_k = clCreateKernel(devcode, "sum", &err);
-	ocl_check(err, "create sum");
+        data[i]=(unsigned short*)malloc(sizeof(unsigned short)*DIM*DIM);
+        //*data[DIM] [NUM_CHANNEL]= malloc(sizeof(unsigned short[DIM][DIM]));
 
-	cl_kernel sum_vec_k = clCreateKernel(devcode, "sum_vec", &err);
-	ocl_check(err, "create sum");
+        status = H5Dread(dataset_img, H5T_NATIVE_USHORT, H5S_ALL, dataspace_img, H5P_DEFAULT, data[i]);
+        H5Dclose(dataset_img);
+    }
+}
 
-	err = clGetKernelWorkGroupInfo(init_k, device,
-		CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
-		sizeof(preferred_init_wg), &preferred_init_wg, NULL);
-	printf("preferred init work-group size multiple: %zu\n",
-		preferred_init_wg);
-	if (!preferred_init_wg) {
-		puts("non sembra un buon numero, usiamo 32");
-		preferred_init_wg = 32;
-	}
+unsigned short pixel(int x,int y,int channel)
+{
+    int loc = x + y*DIM;
+    unsigned short this=data[channel][loc];
+    return this;
+}
 
-	err = clGetKernelWorkGroupInfo(sum_k, device,
-		CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
-		sizeof(preferred_sum_wg), &preferred_sum_wg, NULL);
-	printf("preferred sum work-group size multiple: %zu\n",
-		preferred_sum_wg);
-	if (!preferred_sum_wg) {
-		puts("non sembra un buon numero, usiamo 32");
-		preferred_sum_wg = 32;
-	}
+double pixel_true(int x,int y,int channel)
+{
+    int loc = x + y*DIM;
+    double this=data_true[channel][loc];   
+    return this;
+}
 
-	err = clGetKernelWorkGroupInfo(sum_vec_k, device,
-		CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
-		sizeof(preferred_sum_vec_wg), &preferred_sum_vec_wg, NULL);
-	printf("preferred sum_vec work-group size multiple: %zu\n",
-		preferred_sum_vec_wg);
-	if (!preferred_sum_vec_wg) {
-		puts("non sembra un buon numero, usiamo 32");
-		preferred_sum_vec_wg = 32;
-	}
+bool pixel_mask(int x,int y,int channel)
+{
+    int loc = x + y*DIM;
+    bool this=mask[channel][loc];   
+    return this;
+}
 
-	cl_event init_evt = init(que, init_k,
-		a, b, numels,
-		lws,
-		0, NULL);
-	cl_event sum_evt = sum(que, sum_k,
-		c, a, b, numels,
-		lws,
-		1, &init_evt);
-	cl_event sum_vec_evt = sum_vec(que, sum_vec_k,
-		c, a, b, numels,
-		lws,
-		1, &init_evt);
+void toRadiance()
+{
+    for (int i=0;i<NUM_CHANNEL;++i)
+    {
+        for (int j=0;j<DIM*DIM;++j)
+        {
+            data_true[i][j]=((double)data[i][j])*cal[num[i]-1].slope+cal[num[i]-1].offset;
+        }
+    }
+}
 
-	cl_event map_c;
-	cl_int * host_c = clEnqueueMapBuffer(que, c,
-		CL_FALSE, CL_MAP_READ,
-		0, numbytes,
-		1, &sum_vec_evt, &map_c,
-		&err);
-	ocl_check(err, "map c");
+void toBrightness()
+{
+    //costants
+    double A[]={0.9959,0.9963,0.9991,0.9996,0.9983,0.9981};
+    double B[]={3.471,2.219,0.485,0.181,0.627,0.576};
+    double Vc[]={2569.094,1598.566,1362.142,1149.083,930.659,752.381};
+    double C1=1.19104*pow(10,-5);
+    double C2=1.43877;
 
-	err = clFinish(que);
-	ocl_check(err, "finish que");
+    //printf("log=%f",log(5));
 
-	for (int i = 0; i < numels; ++i) {
-		if (host_c[i] != numels) {
-			printf("%u\t%u != %u\n", i, host_c[i], numels);
-			exit(1);
-		}
-	}
+    for (int i = 3; i < NUM_CHANNEL; ++i)
+    {
+        for (int j = 0; j < DIM*DIM; ++j)
+        {
+            //printf("before=%lf\n",data_true[i][j]);
+            if (data_true[i][j]<0)
+                data_true[i][j]=0;
+            else 
+                data_true[i][j]=((C2*Vc[i-3])/(log((C1*pow(Vc[i-3],3)/data_true[i][j])+1)-B[i-3]))/A[i-3];
+            //printf("after=%lf\n",data_true[i][j]);
+        }
+    }
+}
 
-	cl_event unmap_c;
-	err = clEnqueueUnmapMemObject(que, c, host_c,
-		0, NULL, &unmap_c);
-	ocl_check(err, "unmap a");
+void setup_final_mask()
+{
+    final_mask=(bool*)malloc(sizeof(bool)*DIM*DIM);
+    for (int i = 0; i < DIM*DIM; ++i)
+    {    
+        final_mask[i]=true;
+    } 
+}
 
-	err = clFinish(que);
-	ocl_check(err, "finish unmap");
+#define FROM_X 0
+#define TO_X DIM
+#define FROM_Y 0
+#define TO_Y DIM
 
-	cl_ulong rt_ns;
-	rt_ns = runtime_ns(init_evt);
-	printf("init: %gms %gGB/s\n", rt_ns/(1.e6),
-		2.0*numbytes/rt_ns);
-	rt_ns = runtime_ns(sum_evt);
-	printf("sum: %gms %gGB/s\n", rt_ns/(1.e6),
-		3.0*numbytes/rt_ns);
-	rt_ns = runtime_ns(sum_vec_evt);
-	printf("sum_vec: %gms %gGB/s\n", rt_ns/(1.e6),
-		3.0*numbytes/rt_ns);
-	rt_ns = runtime_ns(map_c);
-	printf("map c: %gms %gGB/s\n", rt_ns/(1.e6),
-		1.0*numbytes/rt_ns);
-	rt_ns = runtime_ns(unmap_c);
-	printf("unmap c: %gms %gGB/s\n", rt_ns/(1.e6),
-		1.0*numbytes/rt_ns);
+void sim()
+{
+    setup_final_mask();
+    for (int i = 0; i < NUM_CHANNEL; ++i)
+    {
+        mask[i]=(bool*)malloc(sizeof(int)*DIM*DIM);
+    }
+    for (int l = 0; l < NUM_CHANNEL; ++l)
+    {    
+        for (int i = FROM_X; i < TO_X; ++i)
+        {
+            for (int j = FROM_Y; j < TO_Y; ++j)
+            {
+                double max=-100.0,min=2000.0;
+                for (int k1 = i-7; k1 < i+7; ++k1)
+                {
+                    for (int k2 = j-7; k2 < j+7; ++k2)
+                    {
+                        if ((!((k1)<0)) && (!((k2)<0)) && (!((k1)>DIM)) && (!((k2)>DIM)))
+                        {
+                            if (pixel_true(k1,k2,l) < min)
+                            {
+                                min=pixel_true(k1,k2,l);
+                            }
+                            if (pixel_true(k1,k2,l) > max)
+                            {
+                                max=pixel_true(k1,k2,l);
+                            }
+                        }
+                    }
+                }
+                if ((max-min)>4) mask[l][i + j*DIM]=false;
+                /*printf("max=%lf\n",max);
+                printf("min=%lf\n",min);
+                printf("pixel(%d,%d)\n",i,j);
+                printf("canale=%d\n",l);*/
+            }
+        }
+    }
+    final_mask=(bool*)malloc(sizeof(int)*DIM*DIM);
+    for (int l = 0; l < NUM_CHANNEL; ++l)
+    {
+        for (int i = 0; i < DIM*DIM; ++i)
+        {    
+            if (mask[l][i]==0)
+            final_mask[i]=0;
+        }        
+    }
+}
 
-	clReleaseMemObject(c);
-	clReleaseMemObject(b);
-	clReleaseMemObject(a);
+void main()
+{
+    for (int i=0;i<NUM_CHANNEL;++i)
+        data_true[i]=(double*)malloc(sizeof(double)*DIM*DIM);
+    read_data();
+    printf("pixel=%d\n",pixel(3000,2104,0));
+    toRadiance();
+    //toBrightness();
+    sim();
+    //printf("pixel=%lf\n",pixel_true(3000,2104,0));
+    //printf("%lf\n",data_true[0][3000 + 2104*DIM]);
+    zoom();
+    printh5((unsigned short*)mask_final_eumet);
 }
