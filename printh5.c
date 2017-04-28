@@ -5,7 +5,9 @@
 
 #define DIM 3712
 
-#define FILE        "subset.h5"
+//#define FILE "subset.h5"
+//char * FILE ="subset.h5";
+
 #define DATASETNAME "IntArray" 
 #define RANK  2
 
@@ -13,8 +15,8 @@
 #define DIM1_SUB  4 
 
 
-#define DIM0     3712                         /* size of dataset */       
-#define DIM1     3712
+//#define DIM0     3712                         /* size of dataset */       
+//#define DIM1     3712
 
 void add_attribute_string(int length)
 {
@@ -115,7 +117,7 @@ void printh5(int* matrix)
     status = H5Fclose (file_id);
 }
 #else
-	void printh5(unsigned short* matrix)
+	void printh5(unsigned short* matrix,int dim0,int dim1)
 {
     hsize_t     dims[2], dimsm[2],dim_attr1[1],dim_attr2[1];   
     //int         data[DIM0][DIM1];           /* data to write */
@@ -143,10 +145,11 @@ void printh5(int* matrix)
      *****************************************************************/
     double (*data)[DIM] = malloc(sizeof(int[DIM][DIM]));
     double (*rdata)[DIM] = malloc(sizeof(int[DIM][DIM]));
-    file_id = H5Fcreate (FILE, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    file_id = H5Fcreate ("subset.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    //file_id = H5Fcreate (FILE, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
 
-    dims[0] = DIM0;
-    dims[1] = DIM1;
+    dims[0] = dim0;
+    dims[1] = dim1;
     dim_attr1[0]=1;
     dim_attr2[0]=1;
     dataspace_id = H5Screate_simple (RANK, dims, NULL); 
