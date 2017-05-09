@@ -16,7 +16,7 @@ int *mask1A,*mask1B,*mask1C,*mask2A,*mask3C,*mask4A,*mask4B,*mask4C,*mask4D,*mas
 #define NUM_CHANNEL 9
 #define NUM_DAYS 16
 #define DATA_PER_DAY 40
-#define TOT_DATA 40*9
+#define TOT_DATA 40*16
 
 char *ChannelPath[] = {
     L15_PATH "DATA/Channel 01/IMAGE_DATA",
@@ -40,10 +40,10 @@ int num[NUM_CHANNEL]={1,2,3,4,5,6,7,9,11};
 char * AttributePath   = HEADER_PATH "RadiometricProcessing/Level15ImageCalibration_ARRAY";
 char * DescriptionPath = HEADER_PATH "ImageDescription/ImageDescription_DESCR";
 char * SubsetPath = META_PATH "SUBSET";
-int north[NUM_DAYS];
-int east[NUM_DAYS];
-int south[NUM_DAYS];
-int west[NUM_DAYS];
+int north[TOT_DATA];
+int east[TOT_DATA];
+int south[TOT_DATA];
+int west[TOT_DATA];
 
 struct calibration
 {
@@ -63,8 +63,7 @@ char fname_mask[NUM_DAYS*DATA_PER_DAY][50];
 hid_t  fid;
 
 #define DIM 3712
-#define DIM_HD_X 11136
-//#define DIM_HD_Y 5568
+#define DIM_HD_X 5568
 #define DIM_HD_Y 11136
 
 unsigned short* data[NUM_DAYS*DATA_PER_DAY][NUM_CHANNEL];
@@ -452,15 +451,33 @@ void print_matrix(double matrix[],int dim,int flag)//0 --> unsigned short , 1 --
     }
 }
 
+/*//ITALIA
+
 #define PADDING_NORTH 400
 #define PADDING_EAST 1312
 #define PADDING_SOUTH 3045
 #define PADDING_WEST 1970
 
+#define PADDING_HD_NORTH PADDING_NORTH*3
+#define PADDING_HD_EAST PADDING_EAST
+#define PADDING_HD_SOUTH 0
+#define PADDING_HD_WEST PADDING_WEST*/
+
+#define PADDING_NORTH_HD 1200
+#define PADDING_EAST_HD 2000
+#define PADDING_SOUTH_HD 900
+#define PADDING_WEST_HD 2400
+
+#define PADDING_NORTH_MASK_HD 0
+#define PADDING_EAST_MASK_HD 0
+#define PADDING_SOUTH_MASK_HD 0
+#define PADDING_WEST_MASK_HD 0
+
+
 void main()
 {
     unsigned short* maschera;
-    unsigned short* shaped;
+    unsigned short *shaped_mask[TOT_DATA],*shaped_hd[TOT_DATA];
     for (int i=0;i<NUM_CHANNEL;++i)
         data_true[i]=(double*)malloc(sizeof(double)*DIM*DIM);
     get_input_files();
@@ -496,12 +513,20 @@ void main()
 
     //printh5(data[0][6],DIM,DIM);
     //shaped=cut_and_shape(data[0][6],DIM*DIM,DIM,0 + PADDING_NORTH, DIM - PADDING_EAST ,DIM - PADDING_SOUTH ,0 + PADDING_WEST);
-    shaped=cut_and_shape(data[0][6],DIM*DIM,DIM,0 + PADDING_NORTH , DIM - PADDING_EAST  ,DIM - PADDING_SOUTH ,0 + PADDING_WEST);
-    printh5(shaped,DIM,DIM);
+    //shaped_mask[0]=cut_and_shape(maschera,DIM*DIM,DIM,0 + PADDING_NORTH , DIM - PADDING_EAST  ,DIM - PADDING_SOUTH ,0 + PADDING_WEST);
+    
+    //shaped_hd[0]=cut_and_shape(data_hd[0],DIM_HD_X*DIM_HD_Y,DIM_HD_X,north[0]-DIM_HD_Y + PADDING_HD_NORTH , west[0]-east[0]- PADDING_HD_EAST ,DIM_HD_Y - south[0] - PADDING_HD_SOUTH ,0 + PADDING_HD_WEST);
+    
+    //Questo v------------------------------- funziona bene
+    /*shaped_hd[0]=cut_and_shape(data_hd[0],DIM_HD_X*DIM_HD_Y,DIM_HD_X, 0 + PADDING_NORTH_HD , DIM_HD_X - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + PADDING_WEST_HD);
+    printh5(shaped_hd[0],DIM_HD_Y,DIM_HD_X);*/
+
+    shaped_mask[0]=cut_and_shape(zoom_mask[0],DIM_HD_Y*DIM_HD_Y,DIM_HD_Y, 0 + PADDING_NORTH_HD , DIM_HD_Y - east[0] - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + (DIM_HD_Y-west[0]) + PADDING_WEST_HD);
+    printh5(shaped_mask[0],DIM_HD_Y,DIM_HD_Y);
     //clear_sky();
     //get_input_files();
     //printh5((unsigned short*)mask_final_eumet);
 }
 /*Nota per me:
-D+evo prendere solo la parte dell'Italia sia dalla maschera(gia" fatto) che dal canale hd.
+Devo prendere solo la parte dell'Italia sia dalla maschera (algoritmo gia' pronto) che dal canale hd.
 */

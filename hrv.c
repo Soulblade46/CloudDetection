@@ -65,8 +65,8 @@ void inter()
 }*/
 
 
-int* zoom(int* pixels,int w1,int h1,int w2,int h2) {
-    int* temp = malloc(sizeof(int)*w2*h2);
+unsigned short * zoom(unsigned short * pixels,int w1,int h1,int w2,int h2) {
+    unsigned short * temp = malloc(sizeof(unsigned short)*w2*h2);
     int x_ratio = (int)((w1<<16)/w2) +1;
     int y_ratio = (int)((h1<<16)/h2) +1;
     int x2, y2 ;
