@@ -15,8 +15,8 @@ int *mask1A,*mask1B,*mask1C,*mask2A,*mask3C,*mask4A,*mask4B,*mask4C,*mask4D,*mas
 
 #define NUM_CHANNEL 9
 #define NUM_DAYS 16
-#define DATA_PER_DAY 40
-#define TOT_DATA 40*16
+#define DATA_PER_DAY 5
+#define TOT_DATA (DATA_PER_DAY*NUM_DAYS)
 
 char *ChannelPath[] = {
 	L15_PATH "DATA/Channel 01/IMAGE_DATA",
@@ -57,8 +57,8 @@ struct description
 	char value[80];
 };
 
-char fname_input[NUM_DAYS*DATA_PER_DAY][50];
-char fname_mask[NUM_DAYS*DATA_PER_DAY][50];
+char* fname_input[NUM_DAYS*DATA_PER_DAY];
+char* fname_mask[NUM_DAYS*DATA_PER_DAY];
 //char* fname[NUM_DAYS*DATA_PER_DAY]={"img-mezzogiorno.h5"};
 hid_t  fid;
 
@@ -131,6 +131,7 @@ void read_calibration(int num)
 	cal=(struct calibration*)malloc(sizeof(struct calibration)*num_entries);
 	status = H5Dread(dataset, h5cal_t, H5S_ALL, dataspace, H5P_DEFAULT, cal);
 	H5Dclose(dataset);
+	H5Fclose(fid);
 }
 
 void read_data_hd(int num)
@@ -138,12 +139,14 @@ void read_data_hd(int num)
 	hid_t dataset, dataspace;
 	herr_t status;
 
+	fid = H5Fopen(fname_input[num] , H5F_ACC_RDONLY , H5P_DEFAULT );
 	dataset = H5Dopen2(fid, ChannelPathHd, H5P_DEFAULT);    
 	dataspace = H5Dget_space(dataset);
 
 	data_hd[num]=(unsigned short*)malloc(sizeof(unsigned short)*DIM_HD_X*DIM_HD_Y);
 	status = H5Dread(dataset, H5T_NATIVE_USHORT, H5S_ALL, dataspace, H5P_DEFAULT, data_hd[num]);
 	H5Dclose(dataset);
+	H5Fclose(fid);
 }
 
 unsigned short pixel(int x,int y,int channel,int file)
@@ -293,6 +296,7 @@ void get_coordinates(int num)
 	hid_t dataset, dataspace;
 	herr_t status;
 
+	fid = H5Fopen(fname_input[num] , H5F_ACC_RDONLY , H5P_DEFAULT );
 	dataset = H5Dopen2(fid, DescriptionPath, H5P_DEFAULT);    
 	dataspace = H5Dget_space(dataset);
 
@@ -339,14 +343,20 @@ void get_input_files()
 	{
 		while ((dir = readdir(d)) != NULL && (last_file<NUM_DAYS*DATA_PER_DAY))
 		{
+			printf("prova\n");
 			len=strlen(dir->d_name);
+			printf("provina\n");
 			if ((strstr(dir->d_name,".h5")!=NULL) && (strstr(dir->d_name,".gz")==NULL))
 			{
+				printf("provona\n");
 				strcpy(direct,directory);
 				strcat(direct,dir->d_name);
+				fname_input[last_file]=malloc(sizeof(char)*strlen(direct)+1);
+				
 				strcpy(fname_input[last_file],direct);
 				++last_file;
-			}         
+			}
+			//printf("%s\n", fname_input[last_file-1]);        
 		}
 	closedir(d);
 	}
@@ -362,11 +372,14 @@ void get_mask_files()
 	char direct[100];
 	char* directory="/home/studenti/dagostino/fulldisk-201501/cloudmask";
 	d = opendir(directory);
+	printf("okprova2\n");
 	if (d)
 	{
+		printf("okprova1\n");
 		while ((dir = readdir(d)) != NULL && (last_file<NUM_DAYS*DATA_PER_DAY))
 		{
 			len=strlen(dir->d_name);
+			printf("okprova\n");
 			if ((strstr(dir->d_name,".grb")!=NULL))
 			{
 				strcpy(direct,directory);
@@ -384,11 +397,11 @@ int compare (const void * a, const void * b)
   return ( *(int*)a - *(int*)b );
 }
 
-double median(double* x, int n) {
-	double temp;
+unsigned short median(unsigned short* x, int n) {
+	unsigned short temp;
 	int i, j;
 	// the following two loops sort the array x in ascending order
-	for(i=0; i<n-1; i++) {
+	/*for(i=0; i<n-1; i++) {
 		for(j=i+1; j<n; j++) {
 			if(x[j] < x[i]) {
 				// swap elements
@@ -396,37 +409,30 @@ double median(double* x, int n) {
 				x[i] = x[j];
 				x[j] = temp;
 			}
+			printf("Mediana n.%d\n", i);
 		}
-	}
+	}*/
+
+	qsort(x,n,sizeof(unsigned short),compare);
 
 	if(n%2==0) {
 		// if there is an even number of elements, return mean of the two elements in the middle
-		return((x[n/2] + x[n/2 - 1]) / 2.0);
+		return((x[n/2] + x[n/2 - 1]) / 2);
 	} else {
 		// else return the element in the middle
 		return x[n/2];
 	}
 }
 
-void clear_sky(double* mat[],int dimX,int dimY,int n_files)
+#define DIM_REGION 192
+unsigned short* t_median(unsigned short* mat[],int dimX,int dimY,int n_files)
 {
-	double* clear;
-	clear=malloc(sizeof(double)*dimX*dimY);
-
-	for (int i = 0; i < n_files; ++i)
-	{
-
-	}
-}
-
-double* t_median(double* mat[],int dimX,int dimY,int n_files)
-{
-	double* t_mediana;
-	t_mediana=malloc(sizeof(double)*dimX*dimY);
+	unsigned short* t_mediana;
+	t_mediana=malloc(sizeof(unsigned short)*dimX*dimY);
 	for (int i = 0; i < dimX*dimY; ++i)
 	{
-		double* values_files;
-		values_files=malloc(sizeof(double)*dimX*dimY);
+		unsigned short* values_files;
+		values_files=malloc(sizeof(unsigned short)*n_files);
 		for (int j = 0; j < n_files; ++j)
 		{
 			values_files[j]=mat[j][i];
@@ -436,15 +442,147 @@ double* t_median(double* mat[],int dimX,int dimY,int n_files)
 	return t_mediana;
 }
 
-double s_t_median(double* mat[],int dimX,int dimY,int n_files)
+#if 1
+unsigned short* s_median(unsigned short* mat[],int dimX,int dimY,int n_files)
 {
-	double s_t_mediana;
-	double* t_mediana;
+	unsigned short* s_mediana;
+	s_mediana=malloc(sizeof(unsigned short)*n_files);
+	for (int i = 0; i < n_files; ++i)
+	{
+		unsigned short* values_files;
+		values_files=malloc(sizeof(unsigned short)*DIM_REGION);
+		for (int j = 0; j < DIM_REGION; ++j)
+		{
+			values_files[j]=mat[i][j];
+		}
 
-	t_mediana=t_median(mat,dimX,dimY,n_files);
-	s_t_mediana=median(t_mediana,dimX*dimY);
+		for (pixel_zero = 0; pixel_zero< num_square_max; num_square=pixel_zero+DIM_REGION)
+		{
+			for (int i = start_x; i < DIM_REGION+pixel_zero; ++i)
+			{
+				for (int j = start_y; j < DIM_REGION+pixel_zero; ++j)
+				{
+					values_files[j]=mat[i][j];		
+				}
+			}
+			pixel_zero=;
+		}//da vedere e incompleto
+		printf("Sto per mediare\n");
+		s_mediana[i]=median(values_files,dimX*dimY);
+		printf("File n.%d mediato\n", i);
+	}
+	return s_mediana;
+}
+#else
+unsigned short* s_median(unsigned short* mat[],int dimX,int dimY,int n_files)
+{
+	unsigned short* s_mediana;
+	s_mediana=malloc(sizeof(unsigned short)*n_files);
+	for (int i = 0; i < n_files; ++i)
+	{
+		unsigned short* values_files;
+		values_files=malloc(sizeof(unsigned short)*dimX*dimY);
+		for (int j = 0; j < dimX*dimY; ++j)
+		{
+			values_files[j]=mat[i][j];
+		}
+		printf("Sto per mediare\n");
+		s_mediana[i]=median(values_files,dimX*dimY);
+		printf("File n.%d mediato\n", i);
+	}
+	return s_mediana;
+}
+#endif
+
+unsigned short s_t_median(unsigned short* mat[],int dimX,int dimY,int n_files)
+{
+	unsigned short s_t_mediana;
+	unsigned short* s_mediana;
+
+	/*t_mediana=t_median(mat,dimX,dimY,n_files);
+	s_t_mediana=median(t_mediana,dimX*dimY);*/
+	s_mediana=s_median(mat,dimX,dimY,n_files);
+	s_t_mediana=median(s_mediana,n_files);
 	return s_t_mediana;
 }
+
+unsigned short* clear[TOT_DATA];
+
+#if 1
+unsigned short** clear_sky(unsigned short* mat[],int dimX,int dimY,int n_files)
+{
+	//unsigned short* clear[n_files];
+	for (int i = 0; i < n_files; ++i)
+	{
+		clear[i]=malloc(sizeof(unsigned short)*dimX*dimY);
+	}
+	/*for (int i = 0; i < dimX*dimY; ++i)
+	{
+		for (int j = 0; j < n_files; ++j)
+		{
+			clear[i]=mat[j][i];
+		}		
+	}*/
+	for (int j = 0; j < n_files; ++j)
+	{
+		for (int i = 0; i < dimX*dimY; ++i)
+		{
+			clear[j][i]=mat[j][i]-  (   (  *(   t_median(mat,dimX,dimY,n_files)+i   )    )   -  s_t_median(mat,dimX,dimY,n_files));
+		}
+	}
+	return clear;
+}
+#else
+#define DIM_REGION 192
+unsigned short** clear_sky(unsigned short* mat[],int dimX,int dimY,int n_files)
+{
+	int start_x=0,start_y=0;
+	int pixel_zero=0;
+	int num_square_max=0;
+	for (int i = 0; i < n_files; ++i)
+	{
+		clear[i]=malloc(sizeof(unsigned short)*dimX*dimY);
+	}
+	/*for (int j = 0; j < n_files; ++j)
+	{
+		for (int i = 0; i < dimX*dimY; ++i)
+		{
+			clear[j][i]=mat[j][i]-  (   (  *(   t_median(mat,dimX,dimY,n_files)+i   )    )   -  s_t_median(mat,dimX,dimY,n_files));
+		}
+	}*/
+	num_square_max=dimX/DIM_REGION;
+	for (num_square = 0; pixel_zero< num_square_max; num_square=pixel_zero+DIM_REGION)
+	{
+		for (int i = start_x; i < DIM_REGION+pixel_zero; ++i)
+		{
+			for (int j = start_y; j < DIM_REGION+pixel_zero; ++j)
+			{
+				clear[j][i]=mat[j][i]-  (   (  *(   t_median(mat,dimX,dimY,n_files)+i   )    )   -  s_t_median(mat,dimX,dimY,n_files));				
+			}
+		}
+	}
+	return clear;
+}
+#endif
+/*#define DIM_REGION 192
+void region(unsigned short* mat[],int dimX,int dimY,int n_files)
+{
+	int start_x=0,start_y=0;
+	int pixel_zero=0;
+	int num_square_max=0;
+	for (num_square = 0; pixel_zero< num_square_max; num_square=pixel_zero+DIM_REGION)
+	{
+		for (int i = start_x; i < DIM_REGION+pixel_zero; ++i)
+		{
+			for (int j = start_y; j < DIM_REGION+pixel_zero; ++j)
+			{
+				mat[i][y];				
+			}
+		}
+	}
+	return;
+}*/
+
 
 #if 0
 unsigned short* cut_and_shape(unsigned short matrix[],int len,int dimx,int north,int east,int south,int west,int dimX_shaped,int dimY_shaped,int token)
@@ -624,38 +762,72 @@ int get_dimension(unsigned short* matrix)
 	return len;
 }
 
+
+unsigned short *shaped_hd[TOT_DATA];
+int dimY_shaped;
+int dimX_shaped;
+
+void read_all()
+{
+	for (int i = 0; i < TOT_DATA; ++i)
+	{
+		read_calibration(i);
+		//read_data(i);
+		//int dimY_shaped=DIM_HD_Y - south[0] - PADDING_SOUTH_HD - (0 + PADDING_NORTH_HD);
+		//int dimX_shaped=DIM_HD_X - east[0] - PADDING_EAST_HD - (0 + (DIM_HD_X-west[0]) + PADDING_WEST_HD)+1;
+		printf("ok_dim\n");
+		read_data_hd(i);
+		shaped_hd[i]=cut_and_shape(1,data_hd[i],DIM_HD_X*DIM_HD_Y,DIM_HD_X, 0 + PADDING_NORTH_HD , DIM_HD_X - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + PADDING_WEST_HD,dimY_shaped,dimX_shaped,0);
+		free(data_hd[i]);
+		printf("Letto file n.%d\n", i);
+	}
+}
+
 void main()
 {
-	unsigned short* maschera;
-	unsigned short* rotated;
-	unsigned short *shaped_mask[TOT_DATA],*shaped_hd[TOT_DATA];
+	unsigned short* maschera[TOT_DATA];
+	unsigned short* rotated[TOT_DATA];
+	//unsigned short *shaped_mask[TOT_DATA],*shaped_hd[TOT_DATA];
+	unsigned short *shaped_mask[TOT_DATA];
 	for (int i=0;i<NUM_CHANNEL;++i)
 		data_true[i]=(double*)malloc(sizeof(double)*DIM*DIM);
+	printf("ok1\n");
 	get_input_files();
-	read_calibration(0);
-	printf("%s\n",fname_input[0]);
+	printf("ok2\n");
+/*	read_calibration(0);
+	read_calibration(50);
+	printf("%s\n",fname_input[100]);
 	read_data(0);
 	read_data_hd(0);
-	printf("pixel_hd_before=%d\n",pixel_hd(7000,3000,0));
-	toRadiance_hd(0);
-	printf("pixel=%d\n",pixel(3000,2104,0,0));
-	printf("pixel_hd_after=%f\n",pixel_hd_true(7000,3000,0));
-	printf("%f\n",cal[0].slope);
+	read_data(50);
+	read_data_hd(50);*/
+
+	/*read_calibration(0);
+	read_data(0);
+	read_data_hd(0);
+	read_calibration(50);
+	read_data(50);
+	read_data_hd(50);*/
+
 	get_coordinates(0);
-	maschera=get_eumetsat_mask("mask.grb",TOT_DATA);
-	#if 1
-	zoom_mask[0]=zoom(maschera,DIM,DIM,DIM*3,DIM*3);
-	rotated=rotate(zoom_mask[0],DIM*3,DIM*3);
-	#else
+	dimY_shaped=DIM_HD_Y - south[0] - PADDING_SOUTH_HD - (0 + PADDING_NORTH_HD);
+	dimX_shaped=DIM_HD_X - east[0] - PADDING_EAST_HD - (0 + (DIM_HD_X-west[0]) + PADDING_WEST_HD)+1;
+	printf("ok_get_cordinates\n");
+	read_all();
+	printf("Lettura ok\n");
+	
+	//printf("pixel_hd_before=%d\n",pixel_hd(7000,3000,0));
+	
+	//toRadiance_hd(0);
+	//printf("pixel=%d\n",pixel(3000,2104,0,0));
+	//printf("pixel_hd_after=%f\n",pixel_hd_true(7000,3000,0));
+	printf("%f\n",cal[0].slope);
+	//get_coordinates(0);
+	printf("ok\n");
 
-	for(int j=0;j < TOT_DATA;++j)
-	{
-		zoom_mask[j]=malloc(sizeof(unsigned short)*DIM*3*DIM*3);
-	}
-
-	zoom_mask[0]=zoom(maschera,DIM,DIM*3,DIM*3);
-	printh5(zoom_mask[0],DIM*3,DIM*3);
-	#endif
+	maschera[0]=get_eumetsat_mask("mask.grb",TOT_DATA);
+	zoom_mask[0]=zoom(maschera[0],DIM,DIM,DIM*3,DIM*3);
+	rotated[0]=rotate(zoom_mask[0],DIM*3,DIM*3);
 
 	printf("north=%d\n",north[0]);
 	printf("east=%d\n",east[0]);
@@ -674,22 +846,26 @@ void main()
 	printh5(shaped_hd[0],DIM_HD_Y,DIM_HD_X);
 
 	#else 
-	int dimY_shaped=DIM_HD_Y - south[0] - PADDING_SOUTH_HD - (0 + PADDING_NORTH_HD);
-	int dimX_shaped=DIM_HD_X - east[0] - PADDING_EAST_HD - (0 + (DIM_HD_X-west[0]) + PADDING_WEST_HD);
+	/*int dimY_shaped=DIM_HD_Y - south[0] - PADDING_SOUTH_HD - (0 + PADDING_NORTH_HD);
+	int dimX_shaped=DIM_HD_X - east[0] - PADDING_EAST_HD - (0 + (DIM_HD_X-west[0]) + PADDING_WEST_HD)+1;*///+1
 	
-	shaped_mask[0]=cut_and_shape(1,rotated,DIM_HD_Y*DIM_HD_Y,DIM_HD_Y, 0 + PADDING_NORTH_HD , DIM_HD_Y - east[0] - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + (DIM_HD_Y-west[0]) + PADDING_WEST_HD,dimY_shaped,dimX_shaped,3);
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////+1
+	//shaped_mask[0]=cut_and_shape(1,rotated[0],DIM_HD_Y*DIM_HD_Y,DIM_HD_Y, 0 + PADDING_NORTH_HD , DIM_HD_Y - east[0] +1 - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + (DIM_HD_Y-west[0]) + PADDING_WEST_HD,dimY_shaped,dimX_shaped,3);
+	/////FUNZIONA ^^^^^
+
 	//ok maschera ----^OK
 	//originale che non funziona bene --V
 	//shaped_hd[0]=cut_and_shape(1,data_hd[0],DIM_HD_X*DIM_HD_Y,DIM_HD_X, 0 + PADDING_NORTH_HD , DIM_HD_X - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + PADDING_WEST_HD,dimY_shaped,dimX_shaped,3);
-	shaped_hd[0]=cut_and_shape(1,data_hd[0],DIM_HD_X*DIM_HD_Y,DIM_HD_X, 0 + PADDING_NORTH_HD , DIM_HD_X - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + PADDING_WEST_HD,dimY_shaped,dimX_shaped,0);
-
+	
+	//shaped_hd[0]=cut_and_shape(1,data_hd[0],DIM_HD_X*DIM_HD_Y,DIM_HD_X, 0 + PADDING_NORTH_HD , DIM_HD_X - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + PADDING_WEST_HD,dimY_shaped,dimX_shaped,0);
+	//FUNZIONA ^^^^^^^
 
 	//shaped_mask[0]=cut_and_shape(rotated,dimX_shaped*dimY_shaped,dimX_shaped, 0 + PADDING_NORTH_HD , DIM_HD_Y - east[0] - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + (DIM_HD_Y-west[0]) + PADDING_WEST_HD,dimX_shaped,dimY_shaped,3);
 
 
-	printf("dim=%d\n",get_dimension(shaped_mask[0]));
+	//printf("dim=%d\n",get_dimension(shaped_mask[0]));
 
-	printf("dimX_shaped= %d , dimY_shaped= %d\n",dimX_shaped,dimY_shaped);
+	//printf("dimX_shaped= %d , dimY_shaped= %d\n",dimX_shaped,dimY_shaped);
 
 	/*shaped_hd[0]=cut_and_shape(data_hd[0],DIM_HD_X*DIM_HD_Y,DIM_HD_X, 0 + PADDING_NORTH_HD , DIM_HD_X - PADDING_EAST_HD ,DIM_HD_Y - south[0] - PADDING_SOUTH_HD ,0 + PADDING_WEST_HD,dimX_shaped,dimY_shaped,3);
 	printh5(shaped_hd[0],DIM_HD_Y,DIM_HD_X);*/
@@ -700,13 +876,18 @@ void main()
 	//printh5(shaped_mask[0],get_dimension(shaped_mask[0]),get_dimension(shaped_mask[0]));
 	//printh5(rotated,DIM,DIM);
 	
-
+	unsigned short** clear;
+	clear=clear_sky(shaped_hd,dimX_shaped,dimY_shaped,TOT_DATA);
+	
 	//STAMPE
-	//printh5(shaped_mask[0],dimY_shaped,dimX_shaped);//ok maschera OK
-	//printh5(shaped_hd[0],dimY_shaped,dimX_shaped);//ok hd OK quasi
+	//printh5(shaped_mask[0],dimY_shaped,dimX_shaped);//ok maschera OK (col +1 sulla X NON funziona bene)
+	printh5(clear[130],dimY_shaped,dimX_shaped);//ok hd OK quasi (col +1 sulla X funziona bene)
 	//printh5(shaped_hd[0],DIM_HD_Y,DIM_HD_X);//ok con shaped
 	//printh5(shaped_mask[0],DIM_HD_Y,DIM_HD_Y);//ok con shaped
-	//printh5(data_hd[0],DIM_HD_Y,DIM_HD_X);
+	//printh5(data_hd[130],DIM_HD_Y,DIM_HD_X);
+	
+	//printf("Sto per stampare\n");
+	//printh5(clear[0],DIM_HD_Y,DIM_HD_X);
 	#endif
 	
 	//clear_sky();
