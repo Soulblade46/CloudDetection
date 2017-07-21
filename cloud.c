@@ -445,31 +445,39 @@ unsigned short* t_median(unsigned short* mat[],int dimX,int dimY,int n_files)
 #if 1
 unsigned short* s_median(unsigned short* mat[],int dimX,int dimY,int n_files)
 {
+	int num_square_max=0,pixel_zero=0,num_square=0,start_x=0,start_y=0;
 	unsigned short* s_mediana;
 	s_mediana=malloc(sizeof(unsigned short)*n_files);
-	for (int i = 0; i < n_files; ++i)
+	num_square_max=dimX/DIM_REGION;
+	
+	printf("median_s\n");
+	int l=0;
+
+	for (int k = 0; k < n_files; ++k)
 	{
 		unsigned short* values_files;
-		values_files=malloc(sizeof(unsigned short)*DIM_REGION);
-		for (int j = 0; j < DIM_REGION; ++j)
+		values_files=malloc(sizeof(unsigned short)*DIM_REGION*DIM_REGION);
+		for (pixel_zero = 0; num_square< num_square_max; ++num_square)
 		{
-			values_files[j]=mat[i][j];
-		}
-
-		for (pixel_zero = 0; pixel_zero< num_square_max; num_square=pixel_zero+DIM_REGION)
-		{
-			for (int i = start_x; i < DIM_REGION+pixel_zero; ++i)
+			for (int i = pixel_zero; (i < DIM_REGION+pixel_zero) && (l<DIM_REGION*DIM_REGION); ++i)
 			{
-				for (int j = start_y; j < DIM_REGION+pixel_zero; ++j)
+				for (int j = pixel_zero; (j < DIM_REGION+pixel_zero) && (l<DIM_REGION*DIM_REGION); ++j)
 				{
-					values_files[j]=mat[i][j];		
+					values_files[l]=mat[k][i+j];
+					printf("l=%d\n",l);
+					++l;
 				}
 			}
-			pixel_zero=;
+			l=0;
+			//pixel_zero=;
+			printf("ok_prima median\n");
+			//exit(2);
+			s_mediana[num_square]=median(values_files,DIM_REGION*DIM_REGION);
+			pixel_zero=pixel_zero+(DIM_REGION*DIM_REGION);
 		}//da vedere e incompleto
 		printf("Sto per mediare\n");
-		s_mediana[i]=median(values_files,dimX*dimY);
-		printf("File n.%d mediato\n", i);
+		s_mediana[k]=median(values_files,DIM_REGION*DIM_REGION);
+		printf("File n.%d mediato\n", k);
 	}
 	return s_mediana;
 }
